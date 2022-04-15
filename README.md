@@ -3,7 +3,7 @@ OpenSea x Replit Hackathon
 
 ![rental io](https://user-images.githubusercontent.com/28753370/163514300-4bc680f0-3864-4b10-b5d1-acbd31972ddd.png)
 
-Check out our website idea: [[LINK] Website prototype](https://www.figma.com/proto/yX7ZJVFSJdWdcEjYBvZxGW/Rental.io?node-id=39%3A941&scaling=scale-down&page-id=0%3A1&starting-point-node-id=117%3A171)
+Check out our website idea: <a href="https://www.figma.com/proto/yX7ZJVFSJdWdcEjYBvZxGW/Rental.io?node-id=39%3A941&scaling=scale-down&page-id=0%3A1&starting-point-node-id=117%3A171" target="_blank">[Link] Website prototype</a>
 
 ### Context
 We are all aware that the Metaverse is becoming increasingly popular, and that many large corporations are entering the market right now. Similarly to the actual world, there are numerous types of NFTs ranging from art to real estate. The distinction is that in the actual world, you can list and rent your property, but not in the Metaverse.
