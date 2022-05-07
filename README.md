@@ -1,5 +1,4 @@
 ## Discover, rent and list your NFT on the best marketplace
-OpenSea x Replit Hackathon
 
 ![rental io](https://user-images.githubusercontent.com/28753370/163514300-4bc680f0-3864-4b10-b5d1-acbd31972ddd.png)
 
