@@ -1,325 +1,234 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.0;
+pragma solidity >=0.8.2 < 0.9.0;
 
-struct RentalRecord {
-  // rental status
-  bool exists;
-  bool active;
-
-  // rental terms
-  address owner;
-  uint256 price;
-  uint256 maxRegistrationPeriods;
-
-  // actual rent data
-  address rentedBy;
-  uint256 rentedAt;
-  uint256 rentedFor;
-  uint256 rentalExpiration;
+/// @title ERC-721 standard interface
+interface ERC721 {
+    function ownerOf(uint256 tokenId) external returns (address);
 }
 
+/// @title Rental.io ERC721 Controller
+/// @author Viktor Kirillov
+contract Rentalio {
+    uint256 public timeUnit = 1 days;
 
-contract Rental {
-  uint public constant singleRegistrationPeriod = 90 seconds;
-
-  // Stores all nft addresses that were listed
-  address[] nfts;
-
-  mapping (address => RentalRecord) rentalRecords;
-  
-  mapping (address => address[]) nftsByOwner;
-  mapping (address => address[]) nftsRentedByAddress;
-  
-  constructor() {}
-
-
-  function isOwner(address nftAddress) private view returns (bool) {
-    return rentalRecords[nftAddress].owner == msg.sender;
-  }
-
-  function isRentee(address nftAddress) private view returns (bool) {
-    return rentalRecords[nftAddress].rentedBy == msg.sender;
-  }
-
-  function isExists(address nftAddress) private view returns (bool) {
-    return rentalRecords[nftAddress].exists == true;
-  }
-
-  function isActive(address nftAddress) private view returns (bool) {
-    return rentalRecords[nftAddress].active == true;
-  }
-
-  function isAvailable(address nftAddress) private view returns (bool) {
-    return 
-      isExists(nftAddress) &&
-      isActive(nftAddress) &&
-      rentalRecords[nftAddress].rentalExpiration < block.timestamp;
-  }
-  
-
-  modifier _owner(address nftAddress) {
-    require(isOwner(nftAddress), "Sender not authorised");
-    _;
-  }
-
-  modifier _rentee(address nftAddress) {
-    require(isRentee(nftAddress), "Sender not authorised");
-    _;
-  }
-
-  modifier _exists(address nftAddress) {
-    require(isExists(nftAddress), "Rental does not exist");
-    _;
-  }
-
-  modifier _doesNotExist(address nftAddress) {
-    require(!isExists(nftAddress), "Rental already exists");
-    _;
-  }
-
-  modifier _active(address nftAddress) {
-    require(isActive(nftAddress), "Rental is not active");
-    _;
-  }
-
-  modifier _available(address nftAddress) {
-    require(isAvailable(nftAddress), "Rental is not available for rent");
-    _;
-  }
-
-
-  /**
-   * @dev Get info about the rental listing.
-   * @param nftAddress The address of the nft.
-   * @return RentalRecord
-   */
-  function getRentalRecord(address nftAddress) public view returns (RentalRecord memory) {
-    return rentalRecords[nftAddress];
-  }
-
-
-  /**
-   * @dev Get all nft addresses for created listings.
-   * @return list of nft addresses.
-   */
-  function getAll() public view returns (address[] memory) {
-    uint j = 0;
-    address[] memory result = new address[](nfts.length);
-
-    for (uint i = 0; i < nfts.length; i++) {
-      if (isExists(nfts[i])) {
-        result[j] = nfts[i];
-        j++;
-      }
+    struct ERC721Identifier {
+        address tokenAddress;
+        uint256 tokenId;
     }
 
-    return result;
-  }
-
-  /**
-   * @dev Get all nft addresses for available listings.
-   * @return list of nft addresses.
-   */
-  function getAllAvailable() public view returns (address[] memory) {
-    uint j = 0;
-    address[] memory result = new address[](nfts.length);
-
-    for (uint i = 0; i < nfts.length; i++) {
-      if (isAvailable(nfts[i])) {
-        result[j] = nfts[i];
-        j++;
-      }
+    struct ERC721Record {
+        bool paused;
+        address tokenAddress;
+        uint256 tokenId;
+        uint256 price;
+        address rentedBy;
+        uint256 rentalExpiration;
+        uint256 erc721recordIdx;
     }
+
+    struct RentalHistory {
+        address rentedFrom;
+        address rentedBy;
+        uint256 price;
+        uint256 duration;
+        uint256 timestamp;
+    }
+
+    address owner;
+    bytes[] erc721RecordIds;
+
+    mapping(address => bytes[]) rentedByAddress;
+    mapping(bytes => ERC721Record) erc721Records;
+    mapping(bytes => RentalHistory[]) rentalHistory;
     
-    return result;
-  }
-
-
-  /**
-   * @dev Get all nft addresses for created listings by owner.
-   * @param addr The address of the renter.
-   * @return list of nft addresses.
-   */
-  function getAllByOwner(address addr) public view returns (address[] memory) {
-    uint j = 0;
-    address[] memory result = new address[](nftsByOwner[addr].length);
-
-    for (uint i = 0; i < nftsByOwner[addr].length; i++) {
-      if (isExists(nftsByOwner[addr][i])) {
-        result[j] = nftsByOwner[addr][i];
-        j++;
-      }
-    }
-    
-    return result;
-  }
-
-  /**
-   * @dev Get all nft addresses for available listings by owner.
-   * @param addr The address of the renter.
-   * @return list of nft addresses.
-   */
-  function getAllAvailableByOwner(address addr) public view returns (address[] memory) {
-    uint j = 0;
-    address[] memory result = new address[](nftsByOwner[addr].length);
-
-    for (uint i = 0; i < nftsByOwner[addr].length; i++) {
-      if (isAvailable(nftsByOwner[addr][i])) {
-        result[j] = nftsByOwner[addr][i];
-        j++;
-      }
-    }
-    
-    return result;
-  }
-
-
-  /**
-   * @dev Get all nft addresses rented by addr.
-   * @param addr The address of the rentee.
-   * @return list of nft addresses.
-   */
-  function getAllRentedByAddress(address addr) public view returns (address[] memory) {
-    uint j = 0;
-    address[] memory result = new address[](nftsRentedByAddress[addr].length);
-
-    for (uint i = 0; i < nftsRentedByAddress[addr].length; i++) {
-      result[j] = nftsRentedByAddress[addr][i];
-      j++;
-    }
-    
-    return result;
-  }
-
-  /**
-   * @dev Get all nft addresses rented by addr that are currently in rent.
-   * @param nftAddress The address of the nft.
-   * @return list of nft addresses.
-   */
-  function getCurrentRentee(address nftAddress) public view returns (address) {
-    if (rentalRecords[nftAddress].rentalExpiration > block.timestamp) {
-      return rentalRecords[nftAddress].rentedBy;
-    }
-    else {
-      return address(0);
-    }
-  }
-
-  
-
-  /**
-   * @dev Publish rental on the market.
-   * @param nftAddress The address of the nft.
-   * @param active boolean whether the rental is rentable once published.
-   * @param price Price for oneRegistrationPeriod.
-   * @param maxRegistrationPeriods Number of maximum singleRegistrationPeriods per rent.
-   */
-  function createRental(address nftAddress, bool active, uint256 price, uint256 maxRegistrationPeriods) public _doesNotExist(nftAddress) {    
-    require(price > 0, "price must be greater than 0");
-    require(maxRegistrationPeriods > 0, "maxRegistrationPeriods must be greater than 0");
-
-    // TODO: check if nft belongs to msg.sender
-
-    rentalRecords[nftAddress] = RentalRecord({
-      exists: true,
-      active: active,
-      owner: msg.sender,
-      price: price,
-      maxRegistrationPeriods: maxRegistrationPeriods,
-      rentedBy: address(0),
-      rentedAt: 0,
-      rentedFor: 0,
-      rentalExpiration: 0
-    });
-
-    // Add to the list of all nfts
-    bool wasListedBefore = false;
-    for (uint i = 0; i < nfts.length; i++) {
-      if (nfts[i] == nftAddress) {
-        wasListedBefore = true;
-        break;
-      }
-    }
-    if (!wasListedBefore) {
-      nfts.push(nftAddress);
+    constructor() {
+        owner = msg.sender;
     }
 
-    // Add to the list of rentals by owner
-    bool wasListedBefore2 = false;
-    for (uint i = 0; i < nftsByOwner[msg.sender].length; i++) {
-      if (nftsByOwner[msg.sender][i] == nftAddress) {
-        wasListedBefore2 = true;
-        break;
-      }
-    }
-    if (!wasListedBefore2) {
-      nftsByOwner[msg.sender].push(nftAddress);
+    /// @dev Encode ERC721Identifier (tokenAddress, tokenId) into bytes.
+    /// @param erc721 Tuple of (tokenAddress, tokenId).
+    /// @return Tuple of (tokenAddress, tokenId) as bytes.
+    function encodeERC721key(ERC721Identifier memory erc721) internal pure returns (bytes memory) {
+        return abi.encode(erc721.tokenAddress, erc721.tokenId);
     }
 
-  }
-
-  /**
-   * @dev Set the active value for the listing.
-   * @param nftAddress The address of the nft.
-   */
-  function removeRental(address nftAddress) public _exists(nftAddress) _owner(nftAddress) {
-    require(rentalRecords[nftAddress].rentalExpiration < block.timestamp, "Rent in progress, cannot remove");
-    rentalRecords[nftAddress].exists = false;
-  }
-
-  /**
-   * @dev Set the active value for the listing.
-   * @param nftAddress The address of the nft.
-   * @param active New active value.
-   */
-  function setActive(address nftAddress, bool active) public _exists(nftAddress) _owner(nftAddress) {
-    rentalRecords[nftAddress].active = active;
-  }
-  
-
-  
-  /**
-   * @dev Rent nft for the given number of singleRegistrationPeriods.
-   * @param nftAddress The address of the nft.
-   * @param numRegistrationPeriods The number of registration periods to rent for.
-   */
-  function rent(address nftAddress, uint256 numRegistrationPeriods) public payable _available(nftAddress) {
-    require(numRegistrationPeriods > 0, "numRegistrationPeriods must be greater than 0");
-    require(numRegistrationPeriods <= rentalRecords[nftAddress].maxRegistrationPeriods, "You can not rent this nft for that long");
-    require(rentalRecords[nftAddress].price * numRegistrationPeriods <= msg.value, "Price is too low");
-
-    payable(rentalRecords[nftAddress].owner).transfer(msg.value);
-
-    rentalRecords[nftAddress].rentedBy = msg.sender;
-    rentalRecords[nftAddress].rentedAt = block.timestamp;
-    rentalRecords[nftAddress].rentedFor = numRegistrationPeriods;
-    rentalRecords[nftAddress].rentalExpiration = block.timestamp + singleRegistrationPeriod * numRegistrationPeriods;
-
-    // Add to the list of rented nfts by address
-    bool wasRentedBefore = false;
-    for (uint i = 0; i < nftsRentedByAddress[msg.sender].length; i++) {
-      if (nftsRentedByAddress[msg.sender][i] == nftAddress) {
-        wasRentedBefore = true;
-        break;
-      }
+    /// @param arr Array to search in.
+    /// @param val Value to search for.
+    /// @return Index of the element if found, length of an array if not.
+    function findInArray(bytes[] memory arr, bytes memory val) internal pure returns (uint256) {
+        for (uint256 i = 0; i < arr.length; i++)
+            if (keccak256(arr[i]) == keccak256(val)) 
+                return i;
+        return arr.length;
     }
-    if (!wasRentedBefore) {
-      nftsRentedByAddress[msg.sender].push(nftAddress);
+
+    /// @dev Returns result of .ownerOf() call on nft contract.
+    /// @param erc721 Tuple of (tokenAddress, tokenId).
+    /// @return address of token owner.
+    function getOwner(ERC721Identifier memory erc721) internal returns (address) {
+        ERC721 nftAddress = ERC721(erc721.tokenAddress);
+        try nftAddress.ownerOf(erc721.tokenId) returns (address _nftOwner) {
+            return _nftOwner;
+        }
+        catch(bytes memory) {
+            revert("wrong nft address provided");
+        }
     }
-  }
 
-  /**
-   * @dev Extend the rent of nft for the given number of singleRegistrationPeriods.
-   * @param nftAddress The address of the nft.
-   * @param numRegistrationPeriods The number of registration periods to rent for.
-   */
-  function extendRent(address nftAddress, uint numRegistrationPeriods) public payable _exists(nftAddress) _rentee(nftAddress) {
-    require(numRegistrationPeriods > 0, "numRegistrationPeriods must be greater than 0");
-    require(rentalRecords[nftAddress].price * numRegistrationPeriods <= msg.value, "Price is too low");
+    /// @param erc721 Tuple (tokenAddress, tokenId).
+    /// @return RentalHistory array for the given token.
+    function getRentalHistory(ERC721Identifier memory erc721) public view returns (RentalHistory[] memory) {
+        return rentalHistory[encodeERC721key(erc721)];
+    }
 
-    payable(rentalRecords[nftAddress].owner).transfer(msg.value);
+    /// @param erc721 Tuple (tokenAddress, tokenId).
+    /// @return Listing entry for the given token.
+    function getERC721Listing(ERC721Identifier memory erc721) public view returns (ERC721Record memory) {
+        return erc721Records[encodeERC721key(erc721)];
+    }
 
-    rentalRecords[nftAddress].rentedFor += numRegistrationPeriods;
-    rentalRecords[nftAddress].rentalExpiration += singleRegistrationPeriod * numRegistrationPeriods;
-  }
+    /// @return allListings All listing entries.
+    function getERC721Listings() public view returns (ERC721Record[] memory allListings) {
+        allListings = new ERC721Record[](erc721RecordIds.length);
+        for (uint i = 0; i < erc721RecordIds.length; i++)
+            allListings[i] = erc721Records[erc721RecordIds[i]];
+    }
+
+    /// @param _address Address to retrieve data for.
+    /// @return rentedListings Listing records rented by given address.
+    function getERC721RentedByAddress(address _address) public view returns (ERC721Record[] memory rentedListings) {
+        rentedListings = new ERC721Record[](rentedByAddress[_address].length);
+        for (uint i = 0; i < rentedByAddress[_address].length; i++)
+            rentedListings[i] = erc721Records[rentedByAddress[_address][i]];
+    }
+
+    /// @notice Should be used by third parties to retrieve user rentals.
+    /// @param _address Address to retrieve data for.
+    /// @return activeRentedListings Listing records rented by given address that are not expired yet.
+    function getERC721ActiveRentals(address _address) public view returns (ERC721Record[] memory activeRentedListings) {
+        uint activeCounter = 0;
+        for (uint i = 0; i < rentedByAddress[_address].length; i++) {
+            ERC721Record memory record = erc721Records[rentedByAddress[_address][i]];
+            if (record.rentedBy == msg.sender && record.rentalExpiration < block.timestamp)
+                activeCounter += 1;
+        }
+
+        activeRentedListings = new ERC721Record[](activeCounter);
+        activeCounter = 0;
+        for (uint i = 0; i < rentedByAddress[_address].length; i++) {
+            ERC721Record memory record = erc721Records[rentedByAddress[_address][i]];
+            if (record.rentedBy == msg.sender && record.rentalExpiration < block.timestamp) {
+                activeRentedListings[activeCounter] = record;
+                activeCounter += 1;
+            }
+        }
+    } 
+
+    /// @param erc721s Array of tuples (tokenAddress, tokenId).
+    /// @return listings Listing entries for the given tokens.
+    function getListingDataBatch(ERC721Identifier[] memory erc721s) public view returns (ERC721Record[] memory listings) {
+        listings = new ERC721Record[](erc721s.length);
+        for (uint i = 0; i < erc721s.length; i++)
+            listings[i] = erc721Records[encodeERC721key(erc721s[i])];
+    }
+
+    /// @dev Creates listing.
+    /// @param erc721 Tuple (tokenAddress, tokenId).
+    /// @param price Price in wei per one rental period.
+    function createERC721Listing(ERC721Identifier memory erc721, uint256 price) public {
+        bytes memory key = encodeERC721key(erc721);
+
+        require(getOwner(erc721) == msg.sender, "not owner of given nft");
+        require(erc721Records[key].tokenAddress == address(0), "listing exists");
+        require(price > 0, "price must be > 0");
+
+        erc721Records[key].tokenAddress = erc721.tokenAddress;
+        erc721Records[key].tokenId = erc721.tokenId;
+        erc721Records[key].price = price;
+        erc721Records[key].erc721recordIdx = erc721RecordIds.length;
+        erc721RecordIds.push(key);
+    }
+
+    /// @dev Sets the new price per single rental period
+    /// @param erc721 Tuple (tokenAddress, tokenId).
+    /// @param price Price in wei per single rental period.
+    function setERC721ListingPrice(ERC721Identifier memory erc721, uint256 price) public {
+        bytes memory key = encodeERC721key(erc721);
+
+        require(getOwner(erc721) == msg.sender, "not owner of given nft");
+        require(erc721Records[key].tokenAddress != address(0), "listing does not exist");
+        require(price > 0, "price must be > 0");
+
+        erc721Records[key].price = price;
+    }
+
+    /// @dev Pauses / unpauses the listing for future rentals.
+    /// @param erc721 Tuple (tokenAddress, tokenId).
+    /// @param newState State whether listing is paused or not.
+    function pauseERC721Listing(ERC721Identifier memory erc721, bool newState) public {
+        bytes memory key = encodeERC721key(erc721);
+
+        require(getOwner(erc721) == msg.sender, "not owner of given nft");
+        require(erc721Records[key].tokenAddress != address(0), "listing doesn't exist");
+        
+        erc721Records[key].paused = newState;
+    }
+
+    /// @dev Removes listing.
+    /// @param erc721 Tuple (tokenAddress, tokenId).
+    function removeERC721Listing(ERC721Identifier memory erc721) public {
+        bytes memory key = encodeERC721key(erc721);
+
+        require(getOwner(erc721) == msg.sender, "not owner of given nft");
+        require(erc721Records[key].tokenAddress != address(0), "listing doesn't exist");
+        require(erc721Records[key].rentalExpiration <= block.timestamp, "rental active");
+
+        // Update index for last entry in erc721datas
+        uint256 idx = erc721Records[key].erc721recordIdx;
+        uint256 lastIdx = erc721RecordIds.length - 1;
+        erc721Records[erc721RecordIds[lastIdx]].erc721recordIdx = idx;
+
+        // Remove listing from erc721datas array
+        erc721RecordIds[idx] = erc721RecordIds[lastIdx];
+        erc721RecordIds.pop();
+
+        delete erc721Records[key];
+    }
+
+    /// @dev Rents / extends rental of a token.
+    /// @param erc721 Tuple (tokenAddress, tokenId).
+    /// @param nTimeUnits Number of time units to rent for.
+    function rentERC721(ERC721Identifier memory erc721, uint256 nTimeUnits) public payable {
+        bytes memory key = encodeERC721key(erc721);
+
+        require(erc721Records[key].tokenAddress != address(0), "record does not exist");
+        require(erc721Records[key].paused == false, "rental paused");
+        require(nTimeUnits > 0, "nTimeUnits must be > 0");
+        require(erc721Records[key].price * nTimeUnits <= msg.value, "not enough payable amount");
+
+        // If rent not in progress - rent
+        if (erc721Records[key].rentalExpiration <= block.timestamp) {
+            erc721Records[key].rentedBy = msg.sender;
+            erc721Records[key].rentalExpiration = block.timestamp + timeUnit * nTimeUnits;
+
+            if (findInArray(rentedByAddress[msg.sender], key) == rentedByAddress[msg.sender].length)
+                rentedByAddress[msg.sender].push(key);
+        }
+
+        // If rent in progress - extend rent
+        else {
+            require(erc721Records[key].rentedBy == msg.sender, "already rented by someone");
+            erc721Records[key].rentalExpiration += timeUnit * nTimeUnits;
+        }
+
+        payable(getOwner(erc721)).transfer(msg.value);
+
+        rentalHistory[key].push(RentalHistory({
+            rentedFrom: getOwner(erc721),
+            rentedBy: msg.sender,
+            price: erc721Records[key].price,
+            duration: timeUnit * nTimeUnits,
+            timestamp: block.timestamp
+        }));
+    }
 }
